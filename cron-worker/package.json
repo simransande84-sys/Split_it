@@ -1,0 +1,28 @@
+{
+  "name": "split_it-cron-worker",
+  "version": "1.0.0",
+  "description": "Worker script to send recurring split reminders for Split_it via email.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cron",
+    "reminder",
+    "email",
+    "splitwise",
+    "GitHub Actions"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "mongoose": "^8.15.1",
+    "nodemailer": "^7.0.3"
+  }
+}
