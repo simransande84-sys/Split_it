@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const crypto = require("crypto");
+const { v4: uuidv4 } = require("uuid");
 
 const groupSchema = new mongoose.Schema({
   name: {
@@ -53,7 +53,7 @@ groupSchema.pre("save", async function (next) {
     let attempts = 0;
 
     while (exists && attempts < 5) {
-      token = crypto.randomBytes(8).toString("hex");
+      token = uuidv4();
       const existing = await mongoose.models.groups.findOne({ inviteToken: token });
       if (!existing) {
         exists = false;

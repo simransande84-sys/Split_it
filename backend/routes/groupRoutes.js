@@ -2,22 +2,38 @@ const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const router = express.Router();
 const GroupModel = require("../models/Group");
+const SignUpModel = require("../models/Users");
 require("dotenv").config();
 const CLIENT_URL = process.env.CLIENT_URL;
 
 router.post("/create-group", async (req, res) => {
   try {
     const { name, createdBy } = req.body;
+    console.log("--> POST /create-group called with body:", req.body);
 
-    // Just generate a token without saving group
+    if (!name || name.trim() === "") {
+      return res.status(400).json({ message: "Group name is required" });
+    }
+
     const inviteToken = uuidv4();
 
-    // Prepare the link (just return it, don't persist anything)
-    const inviteLink = `${CLIENT_URL}/join-group?name=${encodeURIComponent(
-      name
-    )}&createdBy=${createdBy}&token=${inviteToken}`;
+    const group = new GroupModel({
+      name: name.trim(),
+      createdBy,
+      inviteToken,
+      members: [],
+    });
 
-    res.status(200).json({ inviteLink, inviteToken });
+    await group.save();
+    console.log("--> Saved group to MongoDB. ID:", group._id, "inviteToken:", group.inviteToken);
+
+    const clientUrl = CLIENT_URL || "http://localhost:5173";
+    const inviteLink = `${clientUrl}/join-group?name=${encodeURIComponent(
+      group.name
+    )}&createdBy=${createdBy}&token=${group.inviteToken}`;
+
+    console.log("--> Generated inviteLink:", inviteLink);
+    res.status(200).json({ inviteLink, inviteToken: group.inviteToken, group });
   } catch (err) {
     console.error("Error generating invite link:", err.message, err.stack);
     res.status(500).json({ message: "Internal server error" });
@@ -27,6 +43,7 @@ router.post("/create-group", async (req, res) => {
 router.post("/create", async (req, res) => {
   try {
     const { name, memberEmails = [], createdBy, inviteToken } = req.body;
+    console.log("--> POST /create called with body:", req.body);
 
     if (!name || name.trim() === "") {
       return res
@@ -34,17 +51,13 @@ router.post("/create", async (req, res) => {
         .json({ success: false, message: "Group name is required" });
     }
 
-    // Auto-generate inviteToken if it's not provided or is empty
-    let finalToken =
-      inviteToken && inviteToken.trim() !== "" ? inviteToken : uuidv4();
-
-    let tokenExists = await GroupModel.findOne({ inviteToken: finalToken });
-    if (tokenExists) {
-      // regenerate a new one if the provided token is already used
-      finalToken = uuidv4();
+    let group = null;
+    const cleanToken = inviteToken ? inviteToken.trim() : "";
+    if (cleanToken !== "") {
+      group = await GroupModel.findOne({ inviteToken: cleanToken });
     }
 
-    const members = memberEmails
+    const membersToAdd = memberEmails
       .filter((email) => email.trim() !== "")
       .map((email) => ({
         email,
@@ -52,14 +65,29 @@ router.post("/create", async (req, res) => {
         hasJoined: false,
       }));
 
-    const group = new GroupModel({
-      name,
-      createdBy,
-      members,
-      inviteToken: finalToken, // Use the finalToken here
-    });
-    console.log("Saving group:", group);
-    await group.save();
+    if (group) {
+      group.name = name.trim();
+      membersToAdd.forEach((newMem) => {
+        const exists = group.members.some((m) => m.email === newMem.email);
+        if (!exists) {
+          group.members.push(newMem);
+        }
+      });
+      await group.save();
+      console.log("--> Updated existing group:", group._id);
+    } else {
+      const finalToken = cleanToken !== "" ? cleanToken : uuidv4();
+
+      group = new GroupModel({
+        name: name.trim(),
+        createdBy,
+        members: membersToAdd,
+        inviteToken: finalToken,
+      });
+      await group.save();
+      console.log("--> Created new group:", group._id, "with token:", group.inviteToken);
+    }
+
     res.status(201).json({ success: true, group });
   } catch (err) {
     console.error("Error creating group:", err);
@@ -68,8 +96,8 @@ router.post("/create", async (req, res) => {
 });
 
 router.get("/details/:token", async (req, res) => {
-  const { token } = req.params;
-  console.log("Looking for group with token:", req.params.token);
+  const token = req.params.token ? req.params.token.trim() : "";
+  console.log("--> GET /details/:token received token:", token);
 
   try {
     const group = await GroupModel.findOne({ inviteToken: token }).populate({
@@ -77,12 +105,19 @@ router.get("/details/:token", async (req, res) => {
       select: "username",
     });
 
+    console.log("--> Group query result:", group ? { id: group._id, name: group.name, createdBy: group.createdBy } : null);
+
     if (!group) {
       return res.status(404).json({ message: "Group not found" });
     }
+
+    const creatorName = group.createdBy && group.createdBy.username
+      ? group.createdBy.username
+      : "Group Owner";
+
     res.json({
       name: group.name,
-      createdBy: group.createdBy.username,
+      createdBy: creatorName,
     });
   } catch (err) {
     console.error("Error fetching group details:", err);
@@ -92,11 +127,12 @@ router.get("/details/:token", async (req, res) => {
 
 router.get("/join-group", async (req, res) => {
   const { token, email, accept } = req.query;
+  const cleanToken = token ? token.trim() : "";
 
-  console.log("Join Group Request:", { token, email, accept });
+  console.log("Join Group Request:", { token: cleanToken, email, accept });
 
   try {
-    const group = await GroupModel.findOne({ inviteToken: token });
+    const group = await GroupModel.findOne({ inviteToken: cleanToken });
 
     if (!group) {
       return res.status(404).json({ message: "Invalid invite link" });

@@ -81,16 +81,29 @@ export default function CreateSplit() {
       return;
     }
 
+    const trimmedName = groupName.trim();
+    if (!trimmedName) {
+      setGroupNameError("Please specify a group name.");
+      return;
+    } else {
+      setGroupNameError("");
+    }
+
     try {
+      console.log("[CreateSplit] Sending POST request to:", `${apiUrl}/create-group`);
+      console.log("[CreateSplit] Request payload:", { name: trimmedName, createdBy: userId });
+
       const res = await axios.post(`${apiUrl}/create-group`, {
-        name: groupName,
+        name: trimmedName,
         createdBy: userId,
       });
+
+      console.log("[CreateSplit] Server response data:", res.data);
 
       if (res.data.inviteLink && res.data.inviteToken) {
         setInviteLink(res.data.inviteLink);
         setInviteToken(res.data.inviteToken);
-        setGroups((prev) => [...prev, groupName]);
+        fetchGroups();
       } else {
         toast.error("Failed to generate invite link", { autoClose: 2000 });
       }
@@ -170,8 +183,10 @@ export default function CreateSplit() {
       });
 
       setShowGroupModal(false);
-      setGroups((prev) => [...prev, res.data.group]);
+      fetchGroups();
       setGroupName("");
+      setInviteLink("");
+      setInviteToken("");
       setEmails([""]);
       setEmailErrors([""]);
     } catch (err) {

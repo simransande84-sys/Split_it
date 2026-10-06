@@ -18,22 +18,36 @@ export default function JoinGroup() {
 
   useEffect(() => {
     const fetchGroupDetails = async () => {
+      const requestUrl = `${apiUrl}/details/${token}`;
+      console.log("[JoinGroup] Extracted token from URL search query:", token);
+      console.log("[JoinGroup] Requesting GET from API URL:", requestUrl);
+
       try {
-        const response = await axios.get(`${apiUrl}/details/${token}`);
+        const response = await axios.get(requestUrl);
+        console.log("[JoinGroup] GET /details response:", response.data);
         setGroupName(response.data.name);
         setCreatorName(response.data.createdBy);
       } catch (err) {
-        console.error("Error fetching group details:", err);
-        setMessage("Invalid or expired invite link.");
+        console.error("[JoinGroup] Error fetching group details:", err);
+        if (!err.response) {
+          setMessage(`Network Error: Backend server unreachable at ${requestUrl}`);
+        } else if (err.response.status === 404) {
+          setMessage("Invalid or expired invite link. (Group or token not found in database)");
+        } else if (err.response.status === 500) {
+          setMessage(`Backend Server Error (500): ${err.response.data?.message || "Internal server error"}`);
+        } else {
+          setMessage(`Error (${err.response.status}): ${err.response.data?.message || "Failed to fetch details"}`);
+        }
       }
     };
 
     if (token) {
       fetchGroupDetails();
     } else {
-      setMessage("Missing invite token.");
+      console.warn("[JoinGroup] No token parameter present in URL.");
+      setMessage("Missing invite token in URL.");
     }
-  }, [token,apiUrl]);
+  }, [token, apiUrl]);
 
   const validateEmail = (email) => {
     let message = "";
