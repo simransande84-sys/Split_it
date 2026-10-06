@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Split = require("../models/Split");
 const Group = require("../models/Group");
+const SignUpModel = require("../models/Users");
 
 // POST /api/splits - Create a new split
 router.post("/splits", async (req, res) => {
@@ -100,9 +101,27 @@ router.get("/splits", async (req, res) => {
     if (!userId) {
       return res.status(400).json({ message: "User ID is required." });
     }
-    const splits = await Split.find({ createdBy: userId }).populate("group");
 
-    res.json(splits);
+    const user = await SignUpModel.findById(userId);
+    const userEmail = user ? user.email : null;
+
+    const splits = await Split.find({
+      $or: [
+        { createdBy: userId },
+        ...(userEmail ? [{ "splitDetails.email": userEmail }] : []),
+      ],
+    }).populate("group");
+
+    const filteredSplits = splits.filter((split) => {
+      const isCreator = split.createdBy.toString() === userId.toString();
+      if (isCreator) {
+        return true;
+      }
+      const userDetail = split.splitDetails.find((d) => d.email === userEmail);
+      return userDetail ? !userDetail.isPaid : false;
+    });
+
+    res.json(filteredSplits);
   } catch (err) {
     console.error("Error fetching splits:", err);
     res.status(500).json({ error: "Failed to fetch splits." });
